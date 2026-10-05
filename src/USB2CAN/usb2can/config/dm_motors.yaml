@@ -1,0 +1,77 @@
+# =============================================================================
+#  DM 电机限幅配置 — dm_motor_bridge
+# =============================================================================
+#
+# 用法:
+#   1. 任何没在下面显式列出的电机, 都会使用 "全局默认" (pos_max/vel_max/...).
+#   2. 想给某一颗电机单独配置, 就在对应 ch{N}.id{M} 下面列出要 override 的字段.
+#   3. type 字段只作日志/调试用 (启动时会打印), 不影响协议解析.
+#
+# 槽位 -> CAN ID 映射:
+#   ch1.id0 = 通道 1 上 CAN ID = 1 的电机
+#   ch1.id1 = 通道 1 上 CAN ID = 2 的电机
+#   ...
+#   chN.idM = 通道 N 上 CAN ID = (M+1) 的电机
+#
+# DM 电机常见型号参数速查 (出厂值, 实际请以你的电机说明书为准):
+#   DM4310 :  pos_max=12.5  vel_max=30.0  tor_max=10.0   kp_max=500  kd_max=5.0
+#   DM4340 :  pos_max=12.5  vel_max=10.0  tor_max=28.0   kp_max=500  kd_max=5.0
+#   DM6006 :  pos_max=12.5  vel_max=45.0  tor_max=12.0   kp_max=500  kd_max=5.0
+#   DM6248 :  pos_max=12.5  vel_max=45.0  tor_max=20.0   kp_max=500  kd_max=5.0
+#   DM8009 :  pos_max=12.5  vel_max=45.0  tor_max=40.0   kp_max=500  kd_max=5.0
+# =============================================================================
+
+dm_motor_bridge:
+  ros__parameters:
+
+    # ---------- 全局默认 (适用于所有未显式 override 的电机) ----------
+    pos_max: 12.5
+    vel_max: 30.0
+    tor_max: 10.0
+    kp_max:  500.0
+    kd_max:  5.0
+
+    # ---------- 通道总开关 ----------
+    enable_ch1: true
+    enable_ch2: true
+    enable_ch3: true
+
+    # ---------- 启动时通道使能 (cmd 字节 = slot_mask 还是被强制 0) ----------
+    # true: 上电即"通道总开关打开", slot_mask 随 /motor/chN/cmd 自动出现 (推荐)
+    # false: 上电锁死 cmd=0, 需手动 ros2 topic pub /motor/chN/enable Bool true
+    default_enable_ch1: true
+    default_enable_ch2: true
+    default_enable_ch3: true
+
+    # ---------- Per-motor 配置 ----------
+    # 下面这些只是示例, 按你的实际机械臂修改/删除.
+    # 没列出的电机自动用上面的全局默认.
+
+    ch1:
+      id0:
+        type: "DM4310"
+        # 所有字段都缺省 -> 用全局默认 (这里只是写出来 type 方便日志识别)
+      id1:
+        type: "DM8009"
+        pos_max: 12.5
+        vel_max: 45.0
+        tor_max: 40.0
+      id2:
+        type: "DM6248"
+        pos_max: 12.5
+        vel_max: 45.0
+        tor_max: 20.0
+
+    ch2:
+      id0:
+        type: "DM8009"
+        pos_max: 12.5
+        vel_max: 45.0
+        tor_max: 40.0
+      id1:
+        type: "DM6006"
+        pos_max: 12.5
+        vel_max: 45.0
+        tor_max: 12.0
+
+    # ch3 全部用全局默认, 这里不写也可以

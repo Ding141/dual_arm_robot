@@ -1,0 +1,31 @@
+cartesian_position_controller:
+  ros__parameters:
+    # List of joints to control (must match hardware interface)
+    joints:
+      - left_joint_0
+      - left_joint_1
+      - left_joint_2
+      - left_joint_3
+      - left_joint_4
+      - left_joint_5
+      - left_joint_6
+      - right_joint_0
+      - right_joint_1
+      - right_joint_2
+      - right_joint_3
+      - right_joint_4
+      - right_joint_5
+      - right_joint_6
+
+    # End-effector frame names (from URDF link names)
+    left_ee_frame: "left_link_7"
+    right_ee_frame: "right_link_7"
+
+    # IK solver parameters
+    ik_max_iter: 100       # Maximum iterations for IK convergence
+    ik_eps: 1.0e-4         # Convergence threshold (m/rad)
+    ik_damping: 1.0e-3     # Damping factor for singularity robustness
+    ik_dt: 1.0             # IK step size
+
+    # Motion smoothing: max joint speed for interpolation (rad/s)
+    position_interpolation_speed: 2.0

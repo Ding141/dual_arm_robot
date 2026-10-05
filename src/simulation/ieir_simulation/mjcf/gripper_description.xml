@@ -1,0 +1,36 @@
+<mujoco model="gripper_description">
+  <compiler angle="radian" meshdir="../meshes/"/>
+
+  <asset>
+    <mesh name="gripper_base_link" file="gripper_base_link.STL"/>
+    <mesh name="gripper_base_link_col" file="collision/gripper_base_link.STL"/>
+    <mesh name="right_finger" file="right_finger.STL"/>
+    <mesh name="right_finger_col" file="collision/right_finger.STL"/>
+    <mesh name="left_finger" file="left_finger.STL"/>
+    <mesh name="left_finger_col" file="collision/left_finger.STL"/>
+  </asset>
+
+  <worldbody>
+    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="gripper_base_link"/>
+    <geom type="mesh" group="3" rgba="0.79216 0.81961 0.93333 1" mesh="gripper_base_link_col"/>
+    <body name="right_finger" pos="-0.065 0 0.079">
+      <inertial pos="0.0034569 0.0014257 -0.003385" mass="0.04503966" fullinertia="0.00002075 0.00002763 0.00001805 -0.00000178 0.00000138 0.00000178"/>
+      <joint name="right_finger_joint" pos="0 0 0" axis="1 0 0" type="slide" range="0 0.045" actuatorfrcrange="-80 80" damping="0.1" frictionloss="0.1"/>
+      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="right_finger"/>
+      <geom type="mesh" group="3" rgba="0.79216 0.81961 0.93333 1" mesh="right_finger_col"/>
+    </body>
+    <body name="left_finger" pos="0.065 0 0.079">
+      <inertial pos="-0.0034569 -0.0014257 -0.003385" mass="0.04503966" fullinertia="0.00002075 0.00002763 0.00001805 -0.00000178 -0.00000138 -0.00000178"/>
+      <joint name="left_finger_joint" pos="0 0 0" axis="-1 0 0" type="slide" range="0 0.045" actuatorfrcrange="-80 80" damping="0.1" frictionloss="0.1"/>
+      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="left_finger"/>
+      <geom type="mesh" group="3" rgba="0.79216 0.81961 0.93333 1" mesh="left_finger_col"/>
+    </body>
+  </worldbody>
+  <equality>
+    <joint joint1="right_finger_joint" joint2="left_finger_joint" polycoef="0 1 0 0 0" solimp="0.95 0.99 0.001 0.5 2" solref="0.005 1"/>
+  </equality>
+  <actuator>
+    <motor name="act_finger_right" joint="right_finger_joint" gear="1" ctrllimited="true" ctrlrange="-80 80"/>
+  </actuator>
+
+</mujoco>

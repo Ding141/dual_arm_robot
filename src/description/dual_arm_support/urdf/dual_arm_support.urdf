@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="dual_arm_support">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="4.4390908945955E-08 6.15097131842071E-08 0.625"
+        rpy="0 0 0" />
+      <mass
+        value="2.19423393695423" />
+      <inertia
+        ixx="0.287192437664211"
+        ixy="2.69040881704817E-09"
+        ixz="9.91925905799376E-16"
+        iyy="0.287192448392283"
+        iyz="5.97292812641121E-20"
+        izz="0.00296979830799831" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://dual_arm_support/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://dual_arm_support/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="left_arm_attachment_point">
+    <inertial>
+      <origin
+        xyz="0.015 -4.7603E-17 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.1018" />
+      <inertia
+        ixx="5.7895E-05"
+        ixy="-7.5643E-20"
+        ixz="7.4422E-20"
+        iyy="3.6583E-05"
+        iyz="4.1359E-21"
+        izz="3.6583E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://dual_arm_support/meshes/left_arm_attachment_point.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://dual_arm_support/meshes/left_arm_attachment_point.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_attachment_joint"
+    type="fixed">
+    <origin
+      xyz="-0.07 0 1.12"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="left_arm_attachment_point" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_arm_attachment_point">
+    <inertial>
+      <origin
+        xyz="-0.015 5.7142E-17 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.1018" />
+      <inertia
+        ixx="5.7895E-05"
+        ixy="-7.5643E-20"
+        ixz="7.4422E-20"
+        iyy="3.6583E-05"
+        iyz="3.3087E-21"
+        izz="3.6583E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://dual_arm_support/meshes/right_arm_attachment_point.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://dual_arm_support/meshes/right_arm_attachment_point.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_attachment_joint"
+    type="fixed">
+    <origin
+      xyz="0.07 0 1.12"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="right_arm_attachment_point" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+</robot>

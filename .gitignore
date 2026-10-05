@@ -1,0 +1,15 @@
+# ROS 2 / colcon generated files
+build/
+install/
+log/
+recordings/
+.web-console-*.lock
+
+# Local notes and editor files
+temp.md
+.vscode/
+.agents/
+.aws/
+.codex/
+.w3_src_git_backup/
+.git-local/

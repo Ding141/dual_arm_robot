@@ -1,0 +1,113 @@
+# =============================================================================
+# Gripper Controller (real hardware, DM4310 on W3 can0.slot7 / can1.slot7)
+#
+# Standalone node, NOT a ros2_control plugin. W3 topics:
+#     /w3_robot_bridge_node/state
+#     /w3_robot_bridge_node/commands
+#
+# Auto-calibrates open->close on every startup (run-time only, no persistence)
+# because absolute motor angle is lost on power cycle. Calibration logs the
+# OPEN and CLOSE hard-stop motor angles, then settles at OPEN.
+#
+# Command topic (std_msgs/String, parseable):
+#     ros2 topic pub --once /gripper_controller/left_gripper/command \
+#         std_msgs/String "{data: 'close 1.5 2.0'}"
+#       -> close left gripper, force_thr=1.5 Nm, speed=2.0 rad/s motor
+# =============================================================================
+gripper_controller:
+  ros__parameters:
+    # ---- node-wide ----
+    control_rate: 50.0                  # Hz; gripper controller update rate
+
+    # Friction compensation (DM4310 row of friction_model.yaml). Off by
+    # default; turn on with the launch arg (or override here).
+    friction_compensation_enabled: true
+    # Runtime launch files override this with an absolute path resolved from
+    # friction_model_yaml:=...; keep the checked-in default portable.
+    friction_model_yaml: "src/ros2_ws_config/friction_model.yaml"
+    friction_gain: 0.5                    # scale of (coulomb + viscous*v) FF
+    friction_deadband: 0.05               # rad/s; below this, friction_ff = 0
+    velocity_filter_alpha: 0.9            # 50 Hz low-pass for measured-velocity friction FF
+
+    # ---- per-arm enable ----
+    left_enabled:  true
+    right_enabled: true
+
+    # =========================================================================
+    # LEFT gripper (can0.slot7)
+    # =========================================================================
+    # Mechanical wiring: which sign of motor radians closes the fingers.
+    # Flip to -1 if your gear rotates the opposite way; if you get this wrong,
+    # calibration will hit the wrong stop first (still safe -- low cal_speed
+    # and cal_kp -- but the OPEN/CLOSE labels would be swapped).
+    left_close_motor_direction: -1
+
+    # Motor envelope (must match W3 motor profile for can0.slot7).
+    left_pos_max: 12.5                    # rad; unique-decoding window half-width
+    left_vel_max: 50.0                    # rad/s
+    left_tor_max: 10.0                    # Nm
+
+    # Calibration-phase tunables (deliberately gentle).
+    left_cal_speed: 1.0                   # rad/s motor while seeking stop
+    left_cal_kp: 3.0                      # Nm/rad (low so we can be back-driven)
+    left_cal_kd: 0.5                      # Nm/(rad/s)
+    left_cal_stall_torque: 0.5            # Nm; must stay above this AND
+    left_cal_stall_vel_thr: 0.2           # rad/s; below this, for
+    left_cal_stall_ticks: 5               # this many consecutive ticks (=100 ms @50 Hz)
+    left_cal_phase_timeout_s: 15.0        # per-phase abort if no stall by then
+
+    # Run-time motion / hold tunables.
+    # left_move_speed: speed of OPEN/CLOSE motion in motor rad/s.
+    # At ~0.74 motor turns per full 0.045m stroke (your gear ratio),
+    # 1.5 rad/s ~= 0.0145 m/s finger speed -> ~3s for full open/close.
+    left_move_speed: 6.5                  # rad/s motor (default for open/close)
+    left_move_kp: 5.0                     # Nm/rad while moving
+    left_move_kd: 0.5
+    left_hold_kp: 8.0                     # Nm/rad in HOLD (motor PD locks here)
+    left_hold_kd: 0.4
+    left_force_threshold: 1.0             # Nm; default trigger for FORCE_HOLD on close
+    left_force_grace_ticks: 30            # ignore force this many frames after move start
+    left_force_hold_overshoot: 0.1        # rad; in FORCE_HOLD, kp = thr/overshoot
+    left_teleop_track_kp: 5.0             # Nm/rad; slave-side gripper position tracking
+    left_teleop_track_kd: 0.5
+    left_teleop_track_max_step: 0.20      # motor rad/tick; target slew at 50 Hz
+    left_teleop_passive_kd: 0.0           # master-side passive damping, usually 0
+
+    # ENABLING phase (mirrors dm_hardware_interface for arm motors):
+    #   - publish FC at this period (default 50 Hz = 20 ms)
+    #   - publish a zero-impedance MODE_RUN command every tick
+    #   - declare ENABLED only after err==1 for `enable_confirm_frames` ticks
+    #     in a row; if not enabled within `enable_timeout_s`, latch FAILED.
+    left_enable_pub_period_s: 0.02        # 50 Hz FC bursts
+    left_enable_timeout_s:    5.0
+    left_enable_confirm_frames: 5
+
+    # =========================================================================
+    # RIGHT gripper (can1.slot7) -- mirror of LEFT; tweak independently if needed.
+    # =========================================================================
+    right_close_motor_direction: -1
+    right_pos_max: 12.5
+    right_vel_max: 50.0
+    right_tor_max: 10.0
+    right_cal_speed: 1.0
+    right_cal_kp: 3.0
+    right_cal_kd: 0.5
+    right_cal_stall_torque: 0.5
+    right_cal_stall_vel_thr: 0.2
+    right_cal_stall_ticks: 5               # this many consecutive ticks (=100 ms @50 Hz)
+    right_cal_phase_timeout_s: 15.0
+    right_move_speed: 6.5
+    right_move_kp: 5.0
+    right_move_kd: 0.5
+    right_hold_kp: 8.0
+    right_hold_kd: 0.4
+    right_force_threshold: 1.0
+    right_force_grace_ticks: 30
+    right_force_hold_overshoot: 0.1
+    right_teleop_track_kp: 5.0
+    right_teleop_track_kd: 0.5
+    right_teleop_track_max_step: 0.20
+    right_teleop_passive_kd: 0.0
+    right_enable_pub_period_s: 0.02
+    right_enable_timeout_s:    5.0
+    right_enable_confirm_frames: 5

@@ -1,0 +1,89 @@
+<mujoco model="left_arm_description">
+  <compiler angle="radian" meshdir="../meshes/"/>
+
+  <asset>
+    <mesh name="left_base_link" file="left_base_link.STL"/>
+    <mesh name="left_base_link_col" file="collision/left_base_link.STL"/>
+    <mesh name="left_link_1" file="left_link_1.STL"/>
+    <mesh name="left_link_1_col" file="collision/left_link_1.STL"/>
+    <mesh name="left_link_2" file="left_link_2.STL"/>
+    <mesh name="left_link_2_col" file="collision/left_link_2.STL"/>
+    <mesh name="left_link_3" file="left_link_3.STL"/>
+    <mesh name="left_link_3_col" file="collision/left_link_3.STL"/>
+    <mesh name="left_link_4" file="left_link_4.STL"/>
+    <mesh name="left_link_4_col" file="collision/left_link_4.STL"/>
+    <mesh name="left_link_5" file="left_link_5.STL"/>
+    <mesh name="left_link_5_col" file="collision/left_link_5.STL"/>
+    <mesh name="left_link_6" file="left_link_6.STL"/>
+    <mesh name="left_link_6_col" file="collision/left_link_6.STL"/>
+    <mesh name="left_link_7" file="left_link_7.STL"/>
+    <mesh name="left_link_7_col" file="collision/left_link_7.STL"/>
+  </asset>
+
+  <worldbody>
+    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="left_base_link"/>
+    <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="left_base_link_col"/>
+    <body name="left_link_1" pos="0 0 0.1355">
+      <inertial pos="-0.00109529335918426 0.00158432100362189 -0.00494979473059115" mass="1.33500720" fullinertia="0.00101162 0.00156912 0.00091256 0.00000422 -0.00007250 0.00002970"/>
+      <joint name="left_joint_0" pos="0 0 0" axis="0 0 -1" range="-2.3562 2.8798" actuatorfrcrange="-40 40" damping="0.1" frictionloss="0.1"/>
+      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_1"/>
+      <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_1_col"/>
+      <body name="left_link_2" quat="0.499998 0.5 -0.5 0.500002">
+        <inertial pos="0.000508224298191348 -0.0449280282138882 -0.0206256236163859" mass="0.18252313" fullinertia="0.00061618 0.000159935 0.00050408 0.00000304 0.00000280 -0.00009588"/>
+        <joint name="left_joint_1" pos="0 0 0" axis="0 0 -1" range="-3.0513 0.3491" actuatorfrcrange="-40 40" damping="0.1" frictionloss="0.1"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_2"/>
+        <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_2_col"/>
+        <body name="left_link_3" pos="0 -0.20975 0" quat="0.499998 -0.500002 0.5 0.5">
+          <inertial pos="2.83802482036803E-07 -0.000605505330037032 0.054984322701974" mass="1.04367671" fullinertia="0.00584704 0.00583635 0.00032818 -0.00000039 0.00001725 0.00000341"/>
+          <joint name="left_joint_2" pos="0 0 0" axis="0 0 -1" range="-2.5307 2.5307" actuatorfrcrange="-27 27" damping="0.1" frictionloss="0.1"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_3"/>
+          <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_3_col"/>
+          <body name="left_link_4" quat="0.707105 0.707108 0 0">
+            <inertial pos="0.000110401234317883 -0.0670069142247546 0.000940172282106119" mass="0.57070680" fullinertia="0.00349959 0.00035327 0.00340757 0.00000396 0.00000024 0.00000065"/>
+            <joint name="left_joint_3" pos="0 0 0" axis="0 0 1" range="-2.0944 1.4835" actuatorfrcrange="-27 27" damping="0.1" frictionloss="0.1"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_4"/>
+            <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_4_col"/>
+            <body name="left_link_5" pos="0 -0.24 0" quat="0.707107 -0.707107 0 0">
+              <inertial pos="0.000305709664333387 0.00111778275538414 0.08453196488493" mass="0.66041024" fullinertia="0.00532998 0.00525652 0.00045790 -0.00000485 -0.00001587 -0.00005887"/>
+              <joint name="left_joint_4" pos="0 0 0" axis="0 0 -1" range="-2.5307 2.5307" actuatorfrcrange="-7 7" damping="0.1" frictionloss="0.1"/>
+              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_5"/>
+              <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_5_col"/>
+              <body name="left_link_6" quat="0.707105 0.707108 0 0">
+                <inertial pos="-0.00109259369146801 -0.000479735518615576 -0.000148198512131464" mass="0.41299778" fullinertia="0.00019636 0.00019157 0.00019007 -0.00000521 0.00000127 0.00000008"/>
+                <joint name="left_joint_5" pos="0 0 0" axis="0 0 1" range="-0.6981 0.6981" actuatorfrcrange="-7 7" damping="0.1" frictionloss="0.1"/>
+                <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_6"/>
+                <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_6_col"/>
+                <body name="left_link_7" quat="0.499998 0.5 -0.500002 -0.5">
+                  <inertial pos="0.0286842428588672 6.10622663543836E-16 0.00370678756780378" mass="0.19263144" fullinertia="0.00020494 0.00048701 0.00032740 0.00000000 0.00000118 0.00000000"/>
+                  <joint name="left_joint_6" pos="0 0 0" axis="0 0 -1" range="-1.5708 1.5708" actuatorfrcrange="-7 7" damping="0.1" frictionloss="0.1"/>
+                  <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_7"/>
+                  <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="left_link_7_col"/>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="act_left_j0" joint="left_joint_0" gear="1" ctrllimited="true" ctrlrange="-40 40"/>
+    <motor name="act_left_j1" joint="left_joint_1" gear="1" ctrllimited="true" ctrlrange="-40 40"/>
+    <motor name="act_left_j2" joint="left_joint_2" gear="1" ctrllimited="true" ctrlrange="-27 27"/>
+    <motor name="act_left_j3" joint="left_joint_3" gear="1" ctrllimited="true" ctrlrange="-27 27"/>
+    <motor name="act_left_j4" joint="left_joint_4" gear="1" ctrllimited="true" ctrlrange="-7 7"/>
+    <motor name="act_left_j5" joint="left_joint_5" gear="1" ctrllimited="true" ctrlrange="-7 7"/>
+    <motor name="act_left_j6" joint="left_joint_6" gear="1" ctrllimited="true" ctrlrange="-7 7"/>
+  </actuator>
+
+  <contact>
+    <exclude body1="left_link_1" body2="left_link_2"/>
+    <exclude body1="left_link_1" body2="left_link_3"/>
+    <exclude body1="left_link_2" body2="left_link_3"/>
+    <exclude body1="left_link_3" body2="left_link_4"/>
+    <exclude body1="left_link_4" body2="left_link_5"/>
+    <exclude body1="left_link_5" body2="left_link_6"/>
+    <exclude body1="left_link_5" body2="left_link_7"/>
+    <exclude body1="left_link_6" body2="left_link_7"/>
+  </contact>
+</mujoco>

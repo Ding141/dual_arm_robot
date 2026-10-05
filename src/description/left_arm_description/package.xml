@@ -1,0 +1,18 @@
+<package format="2">
+  <name>left_arm_description</name>
+  <version>1.0.0</version>
+  <description>
+    <p>URDF Description package for left_arm_description</p>
+    <p>This package contains configuration data, 3D models and launch files
+for left_arm_description robot</p>
+  </description>
+  <author>TODO</author>
+  <maintainer email="TODO@email.com" />
+  <license>BSD</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>robot_state_publisher</depend>
+  <depend>xacro</depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
