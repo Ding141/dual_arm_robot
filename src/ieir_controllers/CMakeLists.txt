@@ -120,6 +120,7 @@ ament_target_dependencies(joint_position_controller
   pluginlib
   realtime_tools
   trajectory_msgs
+  sensor_msgs
 )
 
 # Cartesian Position Controller Plugin
@@ -294,6 +295,15 @@ install(FILES
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  add_executable(command_state_mock test/command_state_mock.cpp)
+  target_link_libraries(command_state_mock joint_position_controller)
+  ament_target_dependencies(command_state_mock rclcpp rclcpp_lifecycle controller_interface
+    hardware_interface sensor_msgs trajectory_msgs realtime_tools)
+  ament_add_gtest(command_state test/test_command_state.cpp TIMEOUT 60)
+  target_link_libraries(command_state joint_position_controller)
+  ament_target_dependencies(command_state rclcpp rclcpp_lifecycle controller_interface
+    hardware_interface sensor_msgs trajectory_msgs realtime_tools)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(w3_migration test/test_w3_migration.py TIMEOUT 60)
   ament_add_pytest_test(calibration_seek test/test_calibration_seek.py TIMEOUT 60)

@@ -74,6 +74,7 @@ controller_interface::CallbackReturn JointPositionController::on_configure(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
   auto node = get_node();
+  active_ = false;
 
   joint_names_ = node->get_parameter("joints").as_string_array();
   if (joint_names_.empty()) {
@@ -102,6 +103,20 @@ controller_interface::CallbackReturn JointPositionController::on_configure(
   }
 
   command_topic_ = node->get_parameter("command_topic").as_string();
+
+  command_state_pub_ = node->create_publisher<sensor_msgs::msg::JointState>(
+    "~/command_state", rclcpp::SensorDataQoS());
+  command_state_rt_pub_ =
+    std::make_unique<realtime_tools::RealtimePublisher<sensor_msgs::msg::JointState>>(
+      command_state_pub_);
+  // No subscriber/update can see this message before activation.
+  command_state_rt_pub_->lock();
+  auto & state = command_state_rt_pub_->msg_;
+  state.name = joint_names_;
+  state.position.resize(joint_names_.size());
+  state.velocity.resize(joint_names_.size());
+  state.effort.clear();
+  command_state_rt_pub_->unlock();
 
   // Subscribe in non-RT thread; hand off to update() via realtime buffer.
   // The buffer holds at most one trajectory; new ones replace the previous
@@ -170,6 +185,7 @@ controller_interface::CallbackReturn JointPositionController::on_activate(
   active_traj_.reset();
   traj_joint_idx_.clear();
 
+  active_ = true;
   RCLCPP_INFO(node->get_logger(),
               "JointPositionController activated; holding current position. "
               "Send a trajectory_msgs/JointTrajectory on '%s' to move.",
@@ -180,6 +196,7 @@ controller_interface::CallbackReturn JointPositionController::on_activate(
 controller_interface::CallbackReturn JointPositionController::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
+  active_ = false;
   // Hand control back gracefully: zero the gains and the velocity command.
   // With kp == kd == 0 the dm_hardware_interface's bumpless mirror kicks
   // in and tracks the live motor position, so even if no other controller
@@ -345,8 +362,15 @@ void JointPositionController::sample_setpoint(
 controller_interface::return_type JointPositionController::update(
   const rclcpp::Time & time, const rclcpp::Duration & /*period*/)
 {
+  if (!active_) {
+    return controller_interface::return_type::OK;
+  }
   try_pickup_new_trajectory(time);
 
+  const bool publish_state = command_state_rt_pub_ && command_state_rt_pub_->trylock();
+  if (publish_state) {
+    command_state_rt_pub_->msg_.header.stamp = time;
+  }
   const size_t n = joint_names_.size();
   for (size_t i = 0; i < n; ++i) {
     double pos_des, vel_des;
@@ -364,6 +388,13 @@ controller_interface::return_type JointPositionController::update(
     command_interfaces_[i * kCmdStride + 1].set_value(vel_des);
     command_interfaces_[i * kCmdStride + 2].set_value(kp_gains_[i]);
     command_interfaces_[i * kCmdStride + 3].set_value(kd_gains_[i]);
+    if (publish_state) {
+      command_state_rt_pub_->msg_.position[i] = pos_des;
+      command_state_rt_pub_->msg_.velocity[i] = vel_des;
+    }
+  }
+  if (publish_state) {
+    command_state_rt_pub_->unlockAndPublish();
   }
   return controller_interface::return_type::OK;
 }

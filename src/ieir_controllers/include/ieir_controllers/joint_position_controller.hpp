@@ -10,6 +10,8 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/state.hpp"
 #include "realtime_tools/realtime_buffer.hpp"
+#include "realtime_tools/realtime_publisher.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 
 namespace ieir_controllers
@@ -74,6 +76,8 @@ public:
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
 private:
+  friend class JointPositionControllerTestPeer;
+
   // ---- helpers ----
   // Take the latest trajectory from the RT buffer (if any) and install it
   // as the active trajectory, building the joint index map and resolving
@@ -98,6 +102,12 @@ private:
   realtime_tools::RealtimeBuffer<std::shared_ptr<trajectory_msgs::msg::JointTrajectory>>
     traj_buffer_;
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr traj_sub_;
+
+  // Allocated during configure; update only tries the lock and writes by index.
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr command_state_pub_;
+  std::unique_ptr<realtime_tools::RealtimePublisher<sensor_msgs::msg::JointState>>
+    command_state_rt_pub_;
+  bool active_{false};
 
   // ---- active trajectory state (touched only inside update()) ----
   std::shared_ptr<trajectory_msgs::msg::JointTrajectory> active_traj_;

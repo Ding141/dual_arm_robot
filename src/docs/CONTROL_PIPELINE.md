@@ -199,3 +199,35 @@ bridge 独立手动启动；控制端和标定互斥，进程入口固定白名�
 离线测试覆盖 W3 型号/slot/方向配置、夹爪质量剔除不改变臂几何、标定公式/保存/手动入口、
 主从无夹爪发布，以及分发依赖/模型资源。假反馈 GUI 测试不接 CAN，不能证明真实力矩或时延安全。
 真实安装差异、固件量程、电机摩擦、负载和急停均必须在目标机器人逐项验证。
+
+## NEXT 插值后目标的只读观测（w3_next_v1）
+
+`JointPositionController` configure 时创建 `~/command_state`，默认解析为
+`/joint_position_controller/command_state`。类型 sensor_msgs/JointState，name 为
+controller 的 joints 原始顺序（单臂 7 或双臂 14），position/velocity 是同一 update
+已经写入 command interfaces 的最终目标，单位 rad/rad/s，effort 为空。
+header.stamp 精确取 update(time, period) 的 time；它不是 CAN 接收时间。
+
+QoS 为 SensorDataQoS：BEST_EFFORT、VOLATILE、KEEP_LAST depth=5。配置期预分配数组；
+active update 只 trylock 一次并按索引填写，锁不可用直接丢观测帧，控制接口照常写入。
+非实时 worker 负责 DDS publish，不等待 subscriber。不保证精确 300 Hz 观测输出。
+
+inactive/unconfigured 不发布新目标，停用后可能残留最后一帧已排队活动消息；consumer
+必须按源 stamp 判定有效期。重新激活从当时实测位置保持，并清除 inactive 轨迹。
+新增路径不改变插值、gain、接口写入顺序、effort 所有权或 CAN 策略。
+
+现存边界保留：t_elapsed<=0 返回轨迹首点位置且速度 0，包含未来 header.stamp 和首点
+延迟的 t=0；t>0 且未到首点才从 pickup 时冻结姿态 pre-roll。观测消息严格复现该行为。
+若需调整未来起点语义，应另立控制变更任务，不将其混入只读观测接口。
+
+离线验收使用 test/test_command_state.cpp：double-backed mock loaned interfaces，
+实际 ROS trajectory subscriber 与 command_state subscriber，手工控制 update 时间；
+无 controller_manager、CAN bridge 或硬件接口运行。构建后在独立 W3 Humble 系统 shell：
+
+```bash
+ROS_LOG_DIR="$PWD/log/ros" ROS_DOMAIN_ID=74 ROS_LOCALHOST_ONLY=1 \
+  FASTRTPS_DEFAULT_PROFILES_FILE=/home/dingyj/factr2/config/w3/dds_loopback.xml \
+  build/ieir_controllers/command_state --gtest_output=xml:log/acceptance2/command_state.xml
+```
+
+NEXT 环境与契约保存在 FACTR2 仓库，不作为 W3 控制运行依赖。
