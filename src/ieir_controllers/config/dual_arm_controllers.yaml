@@ -201,7 +201,7 @@ joint_position_controller:
       - 70.0   # left_joint_2   (DM4340P)
       - 60.0   # left_joint_3   (DM4340)
       - 10.0   # left_joint_4   (DM4310)
-      - 10.0   # left_joint_5   (DM4310)
+      - 20.0   # left_joint_5   (DM4310): J6 low-speed tracking trial
       - 10.0   # left_joint_6   (DM4310)
       - 70.0   # right_joint_0  (DM8009)
       - 70.0   # right_joint_1  (DM8009)
@@ -218,7 +218,7 @@ joint_position_controller:
       - 2.0    # left_joint_2
       - 2.0    # left_joint_3
       - 0.7    # left_joint_4
-      - 0.6    # left_joint_5
+      - 0.85   # left_joint_5: damping paired with the J6 stiffness increase
       - 0.5    # left_joint_6
       - 2.75    # right_joint_0
       - 2.5    # right_joint_1
@@ -280,7 +280,7 @@ cartesian_position_controller:
       - 70.0   # left_joint_2   (DM4340P)
       - 60.0   # left_joint_3   (DM4340)
       - 10.0   # left_joint_4   (DM4310)
-      - 10.0   # left_joint_5   (DM4310)
+      - 20.0   # left_joint_5   (DM4310): J6 low-speed tracking trial
       - 10.0   # left_joint_6   (DM4310)
       - 70.0   # right_joint_0  (DM8009)
       - 70.0   # right_joint_1  (DM8009)
@@ -297,7 +297,7 @@ cartesian_position_controller:
       - 2.0    # left_joint_2
       - 2.0    # left_joint_3
       - 0.7    # left_joint_4
-      - 0.6    # left_joint_5
+      - 0.85   # left_joint_5: damping paired with the J6 stiffness increase
       - 0.5    # left_joint_6
       - 2.75   # right_joint_0
       - 2.5    # right_joint_1
