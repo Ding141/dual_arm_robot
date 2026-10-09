@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from '/vendor/OrbitControls.js';
 import { STLLoader } from '/vendor/STLLoader.js';
 import { PoseBuffer } from './pose-buffer.js';
+import { createRobotRenderer } from './webgl-renderer.js';
 
 export class RobotView {
   constructor(element, model) {
@@ -14,7 +15,7 @@ export class RobotView {
     this.scene.background = new THREE.Color(0xedf1f3);
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.01, 50);
     this.camera.up.set(0, 0, 1);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer = createRobotRenderer();
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;

@@ -3,7 +3,11 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 
 (async () => {
-  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader'] });
+  const browser = await chromium.launch({
+    headless: true, chromiumSandbox: true,
+    executablePath: process.env.CONSOLE_BROWSER_EXECUTABLE || undefined,
+    args: JSON.parse(process.env.CONSOLE_BROWSER_ARGS || '["--no-sandbox", "--enable-unsafe-swiftshader"]'),
+  });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));

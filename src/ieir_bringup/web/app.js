@@ -333,7 +333,10 @@ async function init() {
     viewer = new RobotView($('#viewport'), bootstrap.model);
     window.consoleScene = viewer;
     viewer.ready.then(count => { $('#model-loading').hidden = true; window.consoleMeshCount = count; }).catch(error => { $('#model-loading').textContent = `模型加载失败：${error.message}`; });
-  } catch (error) { $('#model-loading').textContent = `WebGL 不可用：${error.message}`; }
+  } catch (error) {
+    console.error('Robot view initialization failed', error);
+    $('#model-loading').textContent = `${error.name === 'WebGLContextError' ? 'WebGL 不可用' : '三维视图初始化失败'}：${error.message}`;
+  }
   buildJointEditors();
   for (const [index, title] of ['X / m', 'Y / m', 'Z / m', 'Roll / °', 'Pitch / °', 'Yaw / °'].entries()) {
     const label = element('label', title); const input = element('input');

@@ -74,6 +74,32 @@ python3 src/ieir_bringup/scripts/web_console.py --workspace "$PWD" --preview
 预览模式标为合成数据，不导入 ROS、不打开 CAN；切模式和关节目标只改变本地演示。
 预览不伪造末端 TF、标定或真机服务成功。
 
+### 三维视图提示 WebGL 不可用
+
+三维姿态视图需要浏览器提供 WebGL2，与 ROS、CAN 和 MuJoCo 无关。
+网页先使用浏览器默认显卡并开启抗锯齿；上下文创建失败时自动关闭抗锯齿重试。
+浏览器完全禁用/屏蔽 WebGL2 时，网页代码无法解除限制；详细创建失败原因写入浏览器控制台，
+其余控制台功能继续加载。Chrome 可在 `chrome://gpu` 查看 WebGL 状态，
+在 `chrome://settings/system` 检查“使用图形加速功能（如果可用）”。
+
+Intel/NVIDIA 双显卡 Linux 电脑若遇到 `WebGL2 blocklisted`，且已安装 NVIDIA 驱动，
+可保留现有 bridge/UI，在另一个终端使用独显 OpenGL 后端打开网页：
+
+```bash
+cd ~/w3_dual_arm_ws
+bash src/scripts/open_web_console.sh --nvidia
+# 自定义 UI 端口时：
+# bash src/scripts/open_web_console.sh --nvidia --port 8767
+```
+
+脚本只打开已有网页，不启动控制端或使能电机。它使用独立 Chrome 配置目录，
+避免命令被已有浏览器进程接收后忽略图形参数；不需要关闭原来的浏览器。
+使用 NVIDIA PRIME offload、NVIDIA EGL 和 `--use-angle=gl`，保留浏览器沙箱及驱动屏蔽规则。
+不含 `--no-sandbox`、`--ignore-gpu-blocklist` 或 `--enable-unsafe-swiftshader`。
+此独显入口适用于安装了 NVIDIA EGL 驱动的机器，其他电脑使用默认入口或修复本机图形驱动。
+网页前端修改后重新构建 `ieir_bringup`；已运行服务若读取 install/web，可更新静态文件后刷新浏览器，
+无需为了前端更新停止控制端。
+
 ## 功能与接口
 
 | 页面 | 行为 |
