@@ -75,6 +75,7 @@ ament_target_dependencies(gravity_compensation_controller
   hardware_interface
   pluginlib
   sensor_msgs
+  realtime_tools
 )
 
 # Joint Impedance Controller Plugin
@@ -304,6 +305,11 @@ if(BUILD_TESTING)
   target_link_libraries(command_state joint_position_controller)
   ament_target_dependencies(command_state rclcpp rclcpp_lifecycle controller_interface
     hardware_interface sensor_msgs trajectory_msgs realtime_tools)
+  ament_add_gtest(smooth_friction test/test_smooth_friction.cpp TIMEOUT 60)
+  ament_add_gtest(friction_reference test/test_friction_reference.cpp TIMEOUT 60)
+  target_link_libraries(friction_reference gravity_compensation_controller)
+  ament_target_dependencies(friction_reference rclcpp rclcpp_lifecycle controller_interface
+    hardware_interface sensor_msgs realtime_tools)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(w3_migration test/test_w3_migration.py TIMEOUT 60)
   ament_add_pytest_test(calibration_seek test/test_calibration_seek.py TIMEOUT 60)

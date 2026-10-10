@@ -85,8 +85,8 @@ gravity_compensation_controller:
       - 1.1   # right_joint_6
 
     # ---- Friction compensation ----
-    # Reuses friction_model.yaml identified on the small arm; same motor
-    # families, parameters generalize across instances of the same family.
+    # Initial motor-family coefficients from the small arm. Joint friction
+    # depends on the installed mechanism; validate individual overrides.
     friction_compensation_enabled: true
     # Runtime launch files override this with an absolute path resolved from
     # friction_model_yaml:=...; keep the checked-in default portable.
@@ -151,6 +151,21 @@ gravity_compensation_controller:
     # Scalar fallback (used only when friction_gains above is empty / unset).
     friction_gain: 0.7
     friction_deadband: 0.05
+    # Planning-velocity feedforward: removes the hard measured-velocity
+    # deadband at motion start/reversal. Stale commands fade to zero.
+    smooth_friction_enabled: true
+    friction_reference_topic: /joint_position_controller/command_state
+    friction_transition_velocity: 0.01  # rad/s
+    friction_reference_timeout: 0.05    # seconds
+    friction_slew_rate: 8.0             # Nm/s
+    friction_torque_limit: 0.8          # Nm, per joint before total effort clamp
+    # Explicit conservative J6 trial, below moving residual torque found in
+    # the 20261010 small-range probe. NOT a validated friction identification.
+    # Zero entries keep the original model; actual J6 FF stays <=0.36 Nm.
+    friction_coulomb_pos_overrides: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 0.45, 0.0]
+    friction_coulomb_neg_overrides: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 0.45, 0.0]
 
 # ----------------------------------------------------------------------------
 # Joint Position Controller (DM MIT-mode joint PD via motor)
@@ -208,7 +223,7 @@ joint_position_controller:
       - 70.0   # right_joint_2  (DM4340P)
       - 60.0   # right_joint_3  (DM4340)
       - 10.0   # right_joint_4  (DM4310)
-      - 10.0   # right_joint_5  (DM4310)
+      - 35.0   # right_joint_5  (DM4310): validated smooth-capture J6 gain
       - 10.0   # right_joint_6  (DM4310)
 
     # Damping (motor kd). Length MUST equal len(joints); same order.
@@ -225,11 +240,15 @@ joint_position_controller:
       - 2.0    # right_joint_2
       - 2.0    # right_joint_3
       - 0.7    # right_joint_4
-      - 0.6    # right_joint_5
+      - 1.0    # right_joint_5: damping paired with J6 stiffness
       - 0.5    # right_joint_6
 
     # JointTrajectory topic the controller listens on. Send a
     # trajectory_msgs/JointTrajectory here; latest goal supersedes older.
+    # SI limits: 22.9 deg/s, 100.3 deg/s^2, 200.5 deg/s^3.
+    max_velocity: [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4]
+    max_acceleration: [1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75]
+    max_jerk: [3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5]
     command_topic: "/joint_position_command"
 
 # ----------------------------------------------------------------------------
@@ -287,7 +306,7 @@ cartesian_position_controller:
       - 70.0   # right_joint_2  (DM4340P)
       - 60.0   # right_joint_3  (DM4340)
       - 10.0   # right_joint_4  (DM4310)
-      - 10.0   # right_joint_5  (DM4310)
+      - 35.0   # right_joint_5  (DM4310): validated smooth-capture J6 gain
       - 10.0   # right_joint_6  (DM4310)
 
     # Damping (motor kd). Length MUST equal len(joints); same order.
@@ -304,7 +323,7 @@ cartesian_position_controller:
       - 2.0    # right_joint_2
       - 2.0    # right_joint_3
       - 0.7    # right_joint_4
-      - 0.6    # right_joint_5
+      - 1.0    # right_joint_5: damping paired with J6 stiffness
       - 0.5    # right_joint_6
 
     left_ee_frame: "left_attachment_point"

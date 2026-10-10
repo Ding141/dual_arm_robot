@@ -89,10 +89,11 @@ _ARM_SLICE = {
 
 # Keys inside gravity_compensation_controller/ros__parameters whose value is
 # a 14-element array aligned with 'joints' and therefore must be sliced.
-_GC_JOINT_ARRAY_KEYS = ('joints', 'motor_types', 'gravity_gains', 'friction_gains')
+_GC_JOINT_ARRAY_KEYS = ('joints', 'motor_types', 'gravity_gains', 'friction_gains',
+                       'friction_coulomb_pos_overrides', 'friction_coulomb_neg_overrides')
 
 # Same idea for joint_position_controller.
-_JP_JOINT_ARRAY_KEYS = ('joints', 'kp_gains', 'kd_gains')
+_JP_JOINT_ARRAY_KEYS = ('joints', 'kp_gains', 'kd_gains', 'max_velocity', 'max_acceleration', 'max_jerk')
 
 
 _VALID_TELEOP_ROLES = ('master', 'slave')

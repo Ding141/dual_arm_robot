@@ -8,6 +8,7 @@
 
 #include "controller_interface/helpers.hpp"
 #include "yaml-cpp/yaml.h"
+#include "ieir_controllers/smooth_friction.hpp"
 
 namespace ieir_controllers
 {
@@ -67,6 +68,16 @@ controller_interface::CallbackReturn GravityCompensationController::on_init()
     auto_declare<double>("friction_gain", 0.7);
     auto_declare<std::vector<double>>("friction_gains", std::vector<double>());
     auto_declare<double>("friction_deadband", 0.05);
+    // Opt in after a bounded motion check; the legacy standalone gravity
+    // controller retains its existing behavior when this is disabled.
+    auto_declare<bool>("smooth_friction_enabled", false);
+    auto_declare<double>("friction_transition_velocity", 0.01);
+    auto_declare<double>("friction_reference_timeout", 0.05);
+    auto_declare<double>("friction_slew_rate", 8.0);
+    auto_declare<double>("friction_torque_limit", 0.8);
+    auto_declare<std::string>("friction_reference_topic", "/joint_position_controller/command_state");
+    auto_declare<std::vector<double>>("friction_coulomb_pos_overrides", std::vector<double>());
+    auto_declare<std::vector<double>>("friction_coulomb_neg_overrides", std::vector<double>());
 
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_node()->get_logger(), "Exception during on_init: %s", e.what());
@@ -127,7 +138,8 @@ bool GravityCompensationController::load_friction_model(
       jf.coulomb_neg = m["coulomb_neg"].as<double>();
       jf.valid = std::isfinite(jf.viscous) &&
                  std::isfinite(jf.coulomb_pos) &&
-                 std::isfinite(jf.coulomb_neg);
+                 std::isfinite(jf.coulomb_neg) && jf.viscous >= 0.0 &&
+                 jf.coulomb_pos >= 0.0 && jf.coulomb_neg >= 0.0;
     } catch (const std::exception & e) {
       RCLCPP_ERROR(get_node()->get_logger(),
         "motor_type '%s' missing/invalid friction fields: %s", mt.c_str(), e.what());
@@ -158,6 +170,11 @@ controller_interface::CallbackReturn GravityCompensationController::on_configure
   joint_names_ = get_node()->get_parameter("joints").as_string_array();
   max_effort_ = get_node()->get_parameter("max_effort").as_double();
   velocity_filter_alpha_ = get_node()->get_parameter("velocity_filter_alpha").as_double();
+  if (!std::isfinite(velocity_filter_alpha_) || velocity_filter_alpha_ < 0.0 ||
+    velocity_filter_alpha_ >= 1.0 || !std::isfinite(max_effort_) || max_effort_ <= 0.0) {
+    RCLCPP_ERROR(get_node()->get_logger(), "Invalid velocity filter or effort limit");
+    return controller_interface::CallbackReturn::ERROR;
+  }
 
   if (joint_names_.empty()) {
     RCLCPP_ERROR(get_node()->get_logger(), "No joints specified in 'joints' parameter!");
@@ -286,7 +303,7 @@ controller_interface::CallbackReturn GravityCompensationController::on_configure
       return controller_interface::CallbackReturn::ERROR;
     }
     for (size_t i = 0; i < joint_names_.size(); ++i) {
-      if (!std::isfinite(fgains_param[i])) {
+      if (!std::isfinite(fgains_param[i]) || fgains_param[i] < 0.0) {
         RCLCPP_ERROR(get_node()->get_logger(),
           "friction_gains[%zu] for joint '%s' is non-finite", i,
           joint_names_[i].c_str());
@@ -312,7 +329,65 @@ controller_interface::CallbackReturn GravityCompensationController::on_configure
     RCLCPP_INFO(get_node()->get_logger(), "Friction compensation disabled.");
   }
 
-  RCLCPP_INFO(get_node()->get_logger(), "GravityCompensationController configured successfully");
+  smooth_friction_enabled_ = get_node()->get_parameter("smooth_friction_enabled").as_bool();
+  friction_transition_velocity_ = get_node()->get_parameter("friction_transition_velocity").as_double();
+  friction_reference_timeout_ = get_node()->get_parameter("friction_reference_timeout").as_double();
+  friction_slew_rate_ = get_node()->get_parameter("friction_slew_rate").as_double();
+  friction_torque_limit_ = get_node()->get_parameter("friction_torque_limit").as_double();
+  for (double value : {friction_transition_velocity_, friction_reference_timeout_,
+    friction_slew_rate_, friction_torque_limit_}) {
+    if (!std::isfinite(value) || value <= 0.0) {
+      RCLCPP_ERROR(get_node()->get_logger(), "Smooth friction limits must be finite and positive");
+      return controller_interface::CallbackReturn::ERROR;
+    }
+  }
+  // Zero means use the identified motor-family coefficient. Nonzero per-joint
+  // overrides are explicit trial settings, frozen in each capture's audit.
+  for (const auto & key : {"friction_coulomb_pos_overrides", "friction_coulomb_neg_overrides"}) {
+    const auto values = get_node()->get_parameter(key).as_double_array();
+    if (!values.empty() && values.size() != joint_names_.size()) {
+      RCLCPP_ERROR(get_node()->get_logger(), "%s must match joints", key);
+      return controller_interface::CallbackReturn::ERROR;
+    }
+    for (size_t i = 0; i < values.size(); ++i) {
+      if (!std::isfinite(values[i]) || values[i] < 0.0) {
+        return controller_interface::CallbackReturn::ERROR;
+      }
+      if (values[i] > 0.0) {
+        if (std::string(key) == "friction_coulomb_pos_overrides") {
+          joint_frictions_[i].coulomb_pos = values[i];
+        } else {joint_frictions_[i].coulomb_neg = values[i];}
+      }
+    }
+  }
+  friction_output_.assign(joint_names_.size(), 0.0);
+  friction_reference_.writeFromNonRT(nullptr);
+  reference_sub_.reset();
+  if (smooth_friction_enabled_ && friction_enabled_) {
+    const auto names = joint_names_;
+    reference_sub_ = get_node()->create_subscription<sensor_msgs::msg::JointState>(
+      get_node()->get_parameter("friction_reference_topic").as_string(),
+      rclcpp::SensorDataQoS().keep_last(1),
+      [this, names](sensor_msgs::msg::JointState::ConstSharedPtr msg) {
+        if (msg->name.size() != msg->velocity.size()) {return;}
+        auto reference = std::make_shared<FrictionReference>();
+        reference->stamp_ns = int64_t(msg->header.stamp.sec) * 1000000000LL +
+          msg->header.stamp.nanosec;
+        reference->velocity.reserve(names.size());
+        for (const auto & name : names) {
+          const auto first = std::find(msg->name.begin(), msg->name.end(), name);
+          if (first == msg->name.end() ||
+            std::find(first + 1, msg->name.end(), name) != msg->name.end()) {return;}
+          double v = msg->velocity[std::distance(msg->name.begin(), first)];
+          if (!std::isfinite(v)) {return;}
+          reference->velocity.push_back(v);
+        }
+        friction_reference_.writeFromNonRT(reference);
+      });
+  }
+  RCLCPP_INFO(get_node()->get_logger(),
+    "GravityCompensationController configured; smooth friction=%s, torque cap=%.3f Nm",
+    smooth_friction_enabled_ ? "on" : "off", friction_torque_limit_);
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -336,6 +411,7 @@ controller_interface::CallbackReturn GravityCompensationController::on_activate(
 
   RCLCPP_INFO(get_node()->get_logger(), 
               "GravityCompensationController activated. Robot should feel weightless.");
+  std::fill(friction_output_.begin(), friction_output_.end(), 0.0);
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -352,7 +428,7 @@ controller_interface::CallbackReturn GravityCompensationController::on_deactivat
 }
 
 controller_interface::return_type GravityCompensationController::update(
-  const rclcpp::Time & /*time*/, const rclcpp::Duration & period)
+  const rclcpp::Time & time, const rclcpp::Duration & period)
 {
   // Read joint states from state_interfaces and map to full state vector.
   // Note: q_ and v_ are size nq/nv (18), but we only control 14 joints.
@@ -377,6 +453,12 @@ controller_interface::return_type GravityCompensationController::update(
 
   // Compute gravity compensation
   Eigen::VectorXd tau_gravity = dynamics_->computeGravity();
+  const auto reference_ptr = friction_reference_.readFromRT();
+  const auto reference = reference_ptr ? *reference_ptr : nullptr;
+  const double reference_age = reference ?
+    (time.nanoseconds() - reference->stamp_ns) * 1e-9 : -1.0;
+  const bool fresh_reference = reference && reference->velocity.size() == joint_names_.size() &&
+    reference_age >= 0.0 && reference_age <= friction_reference_timeout_;
 
   // Apply per-joint effort limits and write to command interfaces.
   // tau_total = gravity_gain[i] * tau_gravity[idx_v] + tau_friction
@@ -391,7 +473,18 @@ controller_interface::return_type GravityCompensationController::update(
       // applied only outside the velocity deadband to avoid jitter creep.
       if (friction_enabled_ && joint_frictions_[i].valid) {
         const double v = v_filtered_[idx_v];
-        if (std::abs(v) > friction_deadband_) {
+        if (smooth_friction_enabled_) {
+          const auto & fm = joint_frictions_[i];
+          // Fresh zero planning velocity also suppresses motor-velocity
+          // quantization at position hold. On a stale source, decay to zero;
+          // do not maintain a direction that might accelerate a free arm.
+          const double target = fresh_reference ? smooth_friction(
+            reference->velocity[i], friction_transition_velocity_, fm.coulomb_pos,
+            fm.coulomb_neg, fm.viscous, friction_gains_[i], friction_torque_limit_) : 0.0;
+          friction_output_[i] = friction_slew(friction_output_[i], target,
+            friction_slew_rate_, period.seconds());
+          tau_total += friction_output_[i];
+        } else if (std::abs(v) > friction_deadband_) {
           const auto & fm = joint_frictions_[i];
           const double tau_coulomb = (v > 0.0) ? fm.coulomb_pos : -fm.coulomb_neg;
           const double tau_friction =

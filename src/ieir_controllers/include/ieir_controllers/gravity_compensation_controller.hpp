@@ -10,6 +10,8 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/state.hpp"
 #include "ieir_controllers/ieir_dynamics.hpp"
+#include "realtime_tools/realtime_buffer.h"
+#include "sensor_msgs/msg/joint_state.hpp"
 
 namespace ieir_controllers
 {
@@ -116,6 +118,18 @@ private:
   std::vector<double> friction_gains_;
   double friction_deadband_ = 0.05;
   std::vector<JointFriction> joint_frictions_;  // size == joint_names_.size()
+  struct FrictionReference {
+    int64_t stamp_ns{0};
+    std::vector<double> velocity;
+  };
+  bool smooth_friction_enabled_{false};
+  double friction_transition_velocity_{0.01};
+  double friction_reference_timeout_{0.05};
+  double friction_slew_rate_{8.0};
+  double friction_torque_limit_{0.8};
+  std::vector<double> friction_output_;
+  realtime_tools::RealtimeBuffer<std::shared_ptr<const FrictionReference>> friction_reference_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr reference_sub_;
 
   // State storage
   Eigen::VectorXd q_;

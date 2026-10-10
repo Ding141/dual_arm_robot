@@ -71,6 +71,23 @@ def test_gripper_model_changes_mass_not_arm_geometry():
           f'{largest_gravity_difference:.6f} Nm (vector norm)')
 
 
+@pytest.mark.parametrize('arms', ['left', 'right'])
+def test_smooth_friction_overrides_follow_selected_arm(arms):
+    launch = load('ieir_controllers/launch/dual_arm.launch.py')
+    cfg_dir = ROOT / 'ieir_controllers/config'
+    result = Path(launch._controllers_yaml(str(cfg_dir/'dual_arm_controllers.yaml'),
+        arms, '/tmp/friction_model.yaml', 'slave', str(cfg_dir/'teleop_joint_gains.yaml')))
+    try:
+        params = yaml.safe_load(result.read_text())['gravity_compensation_controller']['ros__parameters']
+        assert params['joints'] == [f'{arms}_joint_{j}' for j in range(7)]
+        for key in ('friction_coulomb_pos_overrides', 'friction_coulomb_neg_overrides'):
+            assert params[key] == ([0.0]*5+[.45,0.0] if arms == 'right' else [0.0]*7)
+        assert params['smooth_friction_enabled']
+        assert params['friction_torque_limit'] == .8
+    finally:
+        result.unlink()
+
+
 def test_bridge_is_dual_arm_only_and_gripper_is_opt_in():
     launch = load('W3_ROBOT/w3_robot_bridge/launch/w3_robot_bridge.launch.py')
     share = ROOT / 'W3_ROBOT/w3_robot_bridge'

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <limits>
+#include <cmath>
+#include <unordered_set>
 
 #include "controller_interface/helpers.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
@@ -62,6 +64,9 @@ controller_interface::CallbackReturn JointPositionController::on_init()
     auto_declare<std::vector<double>>("kp_gains", {});
     auto_declare<std::vector<double>>("kd_gains", {});
     auto_declare<std::string>("command_topic", "/joint_position_command");
+    auto_declare<std::vector<double>>("max_velocity", {});
+    auto_declare<std::vector<double>>("max_acceleration", {});
+    auto_declare<std::vector<double>>("max_jerk", {});
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_node()->get_logger(),
                  "JointPositionController on_init failed: %s", e.what());
@@ -94,7 +99,7 @@ controller_interface::CallbackReturn JointPositionController::on_configure(
   }
   // Reject negatives -- DM expects non-negative kp/kd.
   for (size_t i = 0; i < joint_names_.size(); ++i) {
-    if (kp_gains_[i] < 0.0 || kd_gains_[i] < 0.0) {
+    if (!std::isfinite(kp_gains_[i]) || !std::isfinite(kd_gains_[i]) || kp_gains_[i] < 0.0 || kd_gains_[i] < 0.0) {
       RCLCPP_ERROR(node->get_logger(),
                    "Joint '%s': negative gain (kp=%.3f, kd=%.3f) is not allowed",
                    joint_names_[i].c_str(), kp_gains_[i], kd_gains_[i]);
@@ -103,6 +108,18 @@ controller_interface::CallbackReturn JointPositionController::on_configure(
   }
 
   command_topic_ = node->get_parameter("command_topic").as_string();
+  auto read_limits = [&](const char *name, double fallback, std::vector<double> &out) {
+    out=node->get_parameter(name).as_double_array();
+    if(out.empty()) out.assign(joint_names_.size(),fallback);
+    return out.size()==joint_names_.size() && std::all_of(out.begin(),out.end(),
+      [](double v) {return std::isfinite(v) && v>0;});
+  };
+  if(!read_limits("max_velocity",.4,max_velocity_) ||
+     !read_limits("max_acceleration",1.75,max_acceleration_) ||
+     !read_limits("max_jerk",3.5,max_jerk_)) {
+    RCLCPP_ERROR(node->get_logger(),"Motion limits must be positive finite per-joint arrays");
+    return controller_interface::CallbackReturn::ERROR;
+  }
 
   command_state_pub_ = node->create_publisher<sensor_msgs::msg::JointState>(
     "~/command_state", rclcpp::SensorDataQoS());
@@ -125,6 +142,10 @@ controller_interface::CallbackReturn JointPositionController::on_configure(
   traj_sub_ = node->create_subscription<trajectory_msgs::msg::JointTrajectory>(
     command_topic_, rclcpp::SystemDefaultsQoS(),
     [this](const trajectory_msgs::msg::JointTrajectory::SharedPtr msg) {
+      if(!valid_message(*msg)) {
+        RCLCPP_WARN(get_node()->get_logger(),"Rejected malformed JointTrajectory");
+        return;
+      }
       // Defensive copy so the subscriber-thread shared_ptr cannot be
       // mutated under the RT thread's feet.
       auto copy = std::make_shared<trajectory_msgs::msg::JointTrajectory>(*msg);
@@ -177,6 +198,9 @@ controller_interface::CallbackReturn JointPositionController::on_activate(
   // simply the activation-time pose. It will be overwritten the moment
   // try_pickup_new_trajectory() accepts a trajectory.
   pre_roll_start_pos_ = hold_pos_;
+  hold_vel_.assign(n,0.); hold_acc_.assign(n,0.);
+  segments_.assign(n,{});
+  pending_traj_.reset(); consumed_traj_.reset();
 
   // Drop any trajectory that arrived while we were inactive -- those
   // setpoints are stale and starting from them would defeat the bumpless
@@ -212,151 +236,129 @@ controller_interface::CallbackReturn JointPositionController::on_deactivate(
     command_interfaces_[i * kCmdStride + 3].set_value(0.0);   // damping   (kd)
   }
   active_traj_.reset();
+  pending_traj_.reset(); segments_.clear();
   traj_joint_idx_.clear();
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-void JointPositionController::try_pickup_new_trajectory(const rclcpp::Time & now)
+bool JointPositionController::valid_message(const trajectory_msgs::msg::JointTrajectory &msg) const
 {
-  auto * latest = traj_buffer_.readFromRT();
-  if (latest == nullptr || !*latest) {
-    return;
+  if(msg.points.empty() || msg.joint_names.empty()) return false;
+  std::unordered_set<std::string> names;
+  for(const auto &name:msg.joint_names) {
+    if(!names.insert(name).second ||
+       std::find(joint_names_.begin(),joint_names_.end(),name)==joint_names_.end()) return false;
   }
-  // Ownership transfer: take the pointer and clear the slot so we do not
-  // re-install the same trajectory on the next update().
-  std::shared_ptr<trajectory_msgs::msg::JointTrajectory> new_traj = *latest;
-  traj_buffer_.writeFromNonRT(nullptr);
-
-  if (new_traj->points.empty()) {
-    RCLCPP_WARN(get_node()->get_logger(),
-                "Received JointTrajectory with no points; ignoring");
-    return;
+  double last=-1;
+  const auto n=msg.joint_names.size();
+  for(const auto &p:msg.points) {
+    double t=duration_to_sec(p.time_from_start);
+    if(!std::isfinite(t) || t<0 || t<=last || p.positions.size()!=n ||
+       (!p.velocities.empty() && p.velocities.size()!=n) ||
+       (!p.accelerations.empty() && (p.accelerations.size()!=n || p.velocities.empty()))) return false;
+    for(const auto *values:{&p.positions,&p.velocities,&p.accelerations})
+      if(!std::all_of(values->begin(),values->end(),[](double x){return std::isfinite(x);})) return false;
+    last=t;
   }
+  return true;
+}
 
-  // Build joint index mapping: traj_joint_idx_[i] is the index within
-  // new_traj->joint_names whose name matches joint_names_[i], or
-  // SIZE_MAX_LOCAL if the joint is not present in the trajectory.
-  // Joints absent from the trajectory hold their previous setpoint, which
-  // matches ros2_controllers' joint_trajectory_controller convention.
-  traj_joint_idx_.assign(joint_names_.size(), SIZE_MAX_LOCAL);
-  for (size_t i = 0; i < joint_names_.size(); ++i) {
-    auto it = std::find(new_traj->joint_names.begin(),
-                        new_traj->joint_names.end(),
-                        joint_names_[i]);
-    if (it != new_traj->joint_names.end()) {
-      traj_joint_idx_[i] =
-        static_cast<size_t>(std::distance(new_traj->joint_names.begin(), it));
+TrajectorySpline JointPositionController::stopping_segment(
+  size_t i,double time,double q,double v,double a) const
+{
+  double duration=std::max({.1,4*std::abs(v)/max_acceleration_[i],
+    4*std::abs(a)/max_jerk_[i],std::sqrt(12*std::abs(v)/max_jerk_[i])});
+  for(int retry=0;retry<30;++retry) {
+    const double goal=q+v*duration/2+a*duration*duration/12;
+    auto s=TrajectorySpline::make(time,time+duration,q,v,a,goal,0,0);
+    if(s.bounded(max_velocity_[i],max_acceleration_[i],max_jerk_[i])) return s;
+    duration*=1.25;
+  }
+  // Should only be reachable for an invalid outgoing state; keep diagnostics explicit.
+  throw std::runtime_error("Cannot construct a bounded stopping segment");
+}
+
+bool JointPositionController::install_trajectory(
+  const std::shared_ptr<trajectory_msgs::msg::JointTrajectory> &msg,
+  const rclcpp::Time &start,const rclcpp::Time &now)
+{
+  const double elapsed=std::max(0.,(now-start).seconds());
+  const auto &pts=msg->points;
+  if(duration_to_sec(pts.back().time_from_start)<=elapsed) return false;
+  std::vector<std::vector<TrajectorySpline>> next(joint_names_.size());
+  std::vector<size_t> mapping(joint_names_.size(),SIZE_MAX_LOCAL);
+  std::vector<double> anchor(joint_names_.size());
+  for(size_t i=0;i<joint_names_.size();++i) {
+    double q,v,a; sample_setpoint(i,now,q,v,a); anchor[i]=q;
+    auto it=std::find(msg->joint_names.begin(),msg->joint_names.end(),joint_names_[i]);
+    if(it==msg->joint_names.end()) {
+      next[i].push_back(stopping_segment(i,elapsed,q,v,a)); continue;
+    }
+    const size_t k=std::distance(msg->joint_names.begin(),it); mapping[i]=k;
+    auto velocity=[&](size_t p) {
+      if(!pts[p].velocities.empty()) return pts[p].velocities[k];
+      if(p==0 || p+1==pts.size()) return 0.;
+      const double left=(pts[p].positions[k]-pts[p-1].positions[k]) /
+        (duration_to_sec(pts[p].time_from_start)-duration_to_sec(pts[p-1].time_from_start));
+      const double right=(pts[p+1].positions[k]-pts[p].positions[k]) /
+        (duration_to_sec(pts[p+1].time_from_start)-duration_to_sec(pts[p].time_from_start));
+      return left*right<=0?0.:2*left*right/(left+right);
+    };
+    double previous=elapsed;
+    for(size_t p=0;p<pts.size();++p) {
+      const double t=duration_to_sec(pts[p].time_from_start);
+      // Avoid numerically ill-conditioned microsecond handoff splines at a knot.
+      if(t<=elapsed+1e-8 || (t<elapsed+.02 && p+1<pts.size())) continue;
+      const double vn=velocity(p), an=pts[p].accelerations.empty()?0.:pts[p].accelerations[k];
+      auto seg=TrajectorySpline::make(previous,t,q,v,a,pts[p].positions[k],vn,an);
+      if(!seg.bounded(max_velocity_[i],max_acceleration_[i],max_jerk_[i])) {
+        RCLCPP_WARN(get_node()->get_logger(),"Rejected trajectory: %s segment %.6f..%.6f exceeds v/a/jerk limits",
+          joint_names_[i].c_str(),previous,t); return false;
+      }
+      next[i].push_back(seg); previous=t; q=pts[p].positions[k];v=vn;a=an;
+    }
+    next[i].push_back(stopping_segment(i,previous,q,v,a));
+  }
+  segments_=std::move(next); traj_joint_idx_=std::move(mapping);
+  pre_roll_start_pos_=std::move(anchor);active_traj_=msg;active_traj_start_=start;
+  return true;
+}
+
+void JointPositionController::try_pickup_new_trajectory(const rclcpp::Time &now)
+{
+  auto *latest=traj_buffer_.readFromRT();
+  // A monotonically changing pointer avoids clearing a newer non-RT write from update().
+  if(latest && *latest && *latest!=consumed_traj_) {
+    consumed_traj_=*latest;
+    if(valid_message(*consumed_traj_)) {
+      auto stamp=rclcpp::Time(consumed_traj_->header.stamp,now.get_clock_type());
+      if(stamp.nanoseconds()==0) stamp=now;
+      pending_traj_=consumed_traj_; pending_start_=stamp;
     }
   }
-
-  // Resolve trajectory start time:
-  //   stamp == 0  -> "start now" (ros2 convention)
-  //   stamp != 0  -> absolute start time
-  const rclcpp::Time stamp(new_traj->header.stamp);
-  active_traj_start_ = (stamp.nanoseconds() == 0) ? now : stamp;
-  active_traj_ = new_traj;
-
-  // Freeze the pre-roll start pose at the moment of pickup. sample_setpoint
-  // will linearly interpolate from this snapshot to pts[0] over
-  // [0, pts[0].time_from_start]. Without this snapshot, update() would
-  // overwrite hold_pos_ each tick with the freshly-interpolated value,
-  // turning the linear ramp into an exponential decay.
-  pre_roll_start_pos_ = hold_pos_;
-
-  RCLCPP_INFO(get_node()->get_logger(),
-              "Picked up trajectory: %zu point(s), %zu joint(s) constrained, "
-              "duration %.3fs",
-              active_traj_->points.size(),
-              std::count_if(traj_joint_idx_.begin(), traj_joint_idx_.end(),
-                            [](size_t v){ return v != SIZE_MAX_LOCAL; }),
-              duration_to_sec(active_traj_->points.back().time_from_start));
+  if(pending_traj_ && now>=pending_start_) {
+    auto msg=pending_traj_; pending_traj_.reset();
+    try {install_trajectory(msg,pending_start_,now);}
+    catch(const std::exception &e) {
+      RCLCPP_WARN(get_node()->get_logger(),"Rejected trajectory: %s",e.what());
+    }
+  }
 }
 
 void JointPositionController::sample_setpoint(
-  size_t i, const rclcpp::Time & now,
-  double & pos_out, double & vel_out) const
+  size_t i,const rclcpp::Time &now,double &q,double &v,double &a) const
 {
-  // Default: hold the last commanded position with zero velocity.
-  pos_out = hold_pos_[i];
-  vel_out = 0.0;
-
-  if (!active_traj_ || active_traj_->points.empty()) return;
-  if (i >= traj_joint_idx_.size()) return;
-  const size_t kj = traj_joint_idx_[i];
-  if (kj == SIZE_MAX_LOCAL) return;  // joint not constrained by this traj
-
-  const double t_elapsed = (now - active_traj_start_).seconds();
-
-  const auto & pts = active_traj_->points;
-
-  // Before the first point: stay at the start of the trajectory. We use
-  // the first point's position rather than hold_pos_ so the user gets a
-  // well-defined "future trajectory" behavior even if hold_pos_ drifted.
-  if (t_elapsed <= 0.0) {
-    if (kj < pts.front().positions.size()) {
-      pos_out = pts.front().positions[kj];
-    }
-    vel_out = 0.0;
-    return;
+  q=hold_pos_[i];v=0.;a=0.;
+  if(!active_traj_ || i>=segments_.size() || segments_[i].empty()) return;
+  const double elapsed=(now-active_traj_start_).seconds();
+  const auto &segments=segments_[i];
+  if(elapsed<segments.front().start) {
+    segments.front().sample(segments.front().start,q,v,a); return;
   }
-
-  // After the last point: hold final position.
-  const double t_end = duration_to_sec(pts.back().time_from_start);
-  if (t_elapsed >= t_end) {
-    if (kj < pts.back().positions.size()) {
-      pos_out = pts.back().positions[kj];
-    }
-    vel_out = 0.0;
-    return;
+  for(const auto &seg:segments) {
+    if(elapsed<seg.end) {seg.sample(elapsed,q,v,a);return;}
   }
-
-  // Find the segment [pts[seg-1], pts[seg]] that t_elapsed falls into.
-  // pts[0].time_from_start may be > 0 (gap before motion begins): treat
-  // that gap as "linear interp from hold_pos_ to pts[0].positions".
-  size_t seg = 0;
-  for (; seg < pts.size(); ++seg) {
-    if (duration_to_sec(pts[seg].time_from_start) > t_elapsed) break;
-  }
-  // seg is now the first point with time_from_start > t_elapsed.
-  // (We already handled t_elapsed >= t_end above, so seg < pts.size() here.)
-
-  const double t_next = duration_to_sec(pts[seg].time_from_start);
-  double t_prev;
-  double q_prev, q_next;
-  if (seg == 0) {
-    // Pre-roll segment: ramp from the position at trajectory-pickup time
-    // to pts[0] over [0, t_next]. Uses the frozen snapshot, NOT live
-    // hold_pos_ (which update() overwrites every tick).
-    t_prev = 0.0;
-    q_prev = pre_roll_start_pos_[i];
-  } else {
-    t_prev = duration_to_sec(pts[seg - 1].time_from_start);
-    if (kj < pts[seg - 1].positions.size()) {
-      q_prev = pts[seg - 1].positions[kj];
-    } else {
-      q_prev = hold_pos_[i];
-    }
-  }
-  if (kj < pts[seg].positions.size()) {
-    q_next = pts[seg].positions[kj];
-  } else {
-    q_next = q_prev;
-  }
-
-  const double dt = t_next - t_prev;
-  if (dt <= 1e-9) {
-    pos_out = q_next;
-    vel_out = 0.0;
-    return;
-  }
-  const double alpha = (t_elapsed - t_prev) / dt;
-  pos_out = q_prev + alpha * (q_next - q_prev);
-  // Velocity feed-forward = segment slope. Trajectories that supply
-  // explicit per-point velocities are *not* honored here -- with linear
-  // position interp, the slope is the only velocity profile that is
-  // self-consistent; honoring user-supplied velocities would create a
-  // pos/vel mismatch that the motor PD would fight against.
-  vel_out = (q_next - q_prev) / dt;
+  segments.back().sample(segments.back().end,q,v,a);v=0.;a=0.;
 }
 
 controller_interface::return_type JointPositionController::update(
@@ -373,8 +375,8 @@ controller_interface::return_type JointPositionController::update(
   }
   const size_t n = joint_names_.size();
   for (size_t i = 0; i < n; ++i) {
-    double pos_des, vel_des;
-    sample_setpoint(i, time, pos_des, vel_des);
+    double pos_des, vel_des, acc_des;
+    sample_setpoint(i, time, pos_des, vel_des, acc_des);
 
     // Update the hold so that:
     //   (a) when the trajectory ends, hold_pos_ already equals the final
@@ -383,6 +385,7 @@ controller_interface::return_type JointPositionController::update(
     //       starting position is the most recent commanded one rather
     //       than a measurement that may drift under load.
     hold_pos_[i] = pos_des;
+    hold_vel_[i] = vel_des; hold_acc_[i] = acc_des;
 
     command_interfaces_[i * kCmdStride + 0].set_value(pos_des);
     command_interfaces_[i * kCmdStride + 1].set_value(vel_des);
